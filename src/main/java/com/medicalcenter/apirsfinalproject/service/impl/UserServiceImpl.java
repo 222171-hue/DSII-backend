@@ -93,20 +93,20 @@ public class UserServiceImpl implements UserService {
     @Override
     public List<User> getUsersByRole(Role role) {
         if (role == Role.STUDENT) {
-            return studentRepository.findAll().stream().map(s -> (User) s).collect(Collectors.toList());
+            return studentRepository.findAll().stream().map(s -> (User) s).toList();
         } else if (role == Role.SPECIALIST) {
-            return specialistRepository.findAll().stream().map(s -> (User) s).collect(Collectors.toList());
+            return specialistRepository.findAll().stream().map(s -> (User) s).toList();
         }
         return userRepository.findAll().stream()
                 .filter(u -> u.getRol() == role)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
     public List<User> getSpecialistsBySpecialty(String specialtyName) {
         return specialistRepository.findByEspecialidadName(specialtyName).stream()
                 .map(s -> (User) s)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
@@ -141,12 +141,11 @@ public class UserServiceImpl implements UserService {
             if (request.getCarrera() != null && !request.getCarrera().isBlank()) {
                 student.setCarrera(request.getCarrera());
             }
-        } else if (user instanceof com.medicalcenter.apirsfinalproject.entity.Specialist specialist) {
-            if (request.getEspecialidad() != null && !request.getEspecialidad().isBlank()) {
-                com.medicalcenter.apirsfinalproject.entity.Specialty spec = specialtyRepository.findByName(request.getEspecialidad())
-                        .orElseThrow(() -> new IllegalArgumentException("Especialidad no encontrada"));
-                specialist.setEspecialidad(spec);
-            }
+        } else if (user instanceof com.medicalcenter.apirsfinalproject.entity.Specialist specialist && 
+                   request.getEspecialidad() != null && !request.getEspecialidad().isBlank()) {
+            com.medicalcenter.apirsfinalproject.entity.Specialty spec = specialtyRepository.findByName(request.getEspecialidad())
+                    .orElseThrow(() -> new IllegalArgumentException("Especialidad no encontrada"));
+            specialist.setEspecialidad(spec);
         }
 
         return userRepository.save(user);

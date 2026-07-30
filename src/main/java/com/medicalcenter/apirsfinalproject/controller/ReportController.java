@@ -10,6 +10,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDate;
 
 import com.medicalcenter.apirsfinalproject.entity.Role;
 import com.medicalcenter.apirsfinalproject.entity.Specialist;
@@ -29,7 +32,9 @@ public class ReportController {
     @PreAuthorize("hasAnyRole('ADMIN', 'SPECIALIST')")
     public ResponseEntity<byte[]> getAppointmentsReport(
             @AuthenticationPrincipal CustomUserDetails userDetails,
-            @RequestParam(required = false) String specialty) {
+            @RequestParam(required = false) String specialty,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         
         if (userDetails.getUser().getRol() == Role.SPECIALIST) {
             Specialist specialist = specialistRepository.findById(userDetails.getUser().getId()).orElse(null);
@@ -38,7 +43,7 @@ public class ReportController {
             }
         }
 
-        byte[] pdfBytes = reportService.generateAppointmentsReport(specialty);
+        byte[] pdfBytes = reportService.generateAppointmentsReport(specialty, startDate, endDate);
         
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_PDF);

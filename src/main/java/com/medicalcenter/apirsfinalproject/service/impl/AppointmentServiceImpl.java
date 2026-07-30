@@ -26,10 +26,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 @RequiredArgsConstructor
 public class AppointmentServiceImpl implements AppointmentService {
+    private static final String APPOINTMENT_NOT_FOUND = "Appointment not found";
+    private static final Logger logger = LoggerFactory.getLogger(AppointmentServiceImpl.class);
 
     private final AppointmentRepository appointmentRepository;
     private final SpecialistRepository specialistRepository;
@@ -41,15 +45,23 @@ public class AppointmentServiceImpl implements AppointmentService {
     public void init() {
         try {
             jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=0");
-            try {
-                jdbcTemplate.execute("ALTER TABLE tappointment MODIFY id_student VARCHAR(36) NULL");
-            } catch (Exception e1) {
-                try { jdbcTemplate.execute("ALTER TABLE tappointment MODIFY idStudent VARCHAR(36) NULL"); } catch (Exception e2) {}
-            }
+            alterAppointmentStudentColumn();
             jdbcTemplate.execute("ALTER TABLE tappointment MODIFY status VARCHAR(30) NOT NULL");
             jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=1");
         } catch (Exception e) {
-            System.out.println("No se pudo alterar la tabla tappointment: " + e.getMessage());
+            logger.error("No se pudo alterar la tabla tappointment: {}", e.getMessage());
+        }
+    }
+
+    private void alterAppointmentStudentColumn() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE tappointment MODIFY id_student VARCHAR(36) NULL");
+        } catch (Exception e1) {
+            try {
+                jdbcTemplate.execute("ALTER TABLE tappointment MODIFY idStudent VARCHAR(36) NULL");
+            } catch (Exception e2) {
+                logger.warn("Could not modify idStudent column", e2);
+            }
         }
     }
 
@@ -97,7 +109,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Transactional
     public void cancelAppointmentByStudent(String studentId, String appointmentId) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
+                .orElseThrow(() -> new IllegalArgumentException(APPOINTMENT_NOT_FOUND));
 
         if (appointment.getStudent() == null || !appointment.getStudent().getId().equals(studentId)) {
             throw new IllegalArgumentException("Not authorized to cancel this appointment");
@@ -115,7 +127,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Transactional
     public void changeAppointmentStatus(String specialistId, String appointmentId, AppointmentStatus newStatus, String cancelReason) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
+                .orElseThrow(() -> new IllegalArgumentException(APPOINTMENT_NOT_FOUND));
 
         if (!appointment.getSpecialist().getId().equals(specialistId)) {
             throw new IllegalArgumentException("Not authorized to modify this appointment");
@@ -144,9 +156,23 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     public List<Appointment> getPendingAppointmentsForStudent(String studentId) {
         // Obtenemos todas y filtramos localmente para simplificar la consulta
-        return appointmentRepository.findAll().stream()
+        List<Appointment> studentAppointments = appointmentRepository.findAll().stream()
                 .filter(a -> a.getStudent() != null && a.getStudent().getId().equals(studentId))
-                .collect(Collectors.toList());
+                .toList();
+
+        LocalDateTime now = LocalDateTime.now();
+        
+        for (Appointment app : studentAppointments) {
+            if (app.getStatus() == AppointmentStatus.PENDIENTE) {
+                LocalDateTime appDateTime = LocalDateTime.of(app.getAppointmentDate(), app.getStartTime());
+                if (appDateTime.isBefore(now)) {
+                    app.setStatus(AppointmentStatus.AUSENTE);
+                    appointmentRepository.save(app);
+                                    }
+            }
+        }
+        
+        return studentAppointments;
     }
 
     @Override
@@ -162,13 +188,16 @@ public class AppointmentServiceImpl implements AppointmentService {
         LocalDate endDate = end.toLocalDate();
         List<Appointment> apps = appointmentRepository.findBySpecialistIdAndAppointmentDateBetween(specialistId, startDate, endDate);
         
-        List<Object> occupiedSlots = apps.stream()
+        List<Map<String, Object>> occupiedSlots = apps.stream()
                 .filter(a -> a.getStatus() != AppointmentStatus.CANCELADO_POR_ESTUDIANTE && a.getStatus() != AppointmentStatus.CANCELADO_POR_ESPECIALISTA)
                 .map(a -> {
                     LocalDateTime dt = LocalDateTime.of(a.getAppointmentDate(), a.getStartTime());
-                    return dt;
+                    Map<String, Object> slot = new HashMap<>();
+                    slot.put("dateTime", dt);
+                    slot.put("status", a.getStatus().name());
+                    return slot;
                 })
-                .collect(Collectors.toList());
+                .toList();
                 
         Map<String, Object> response = new HashMap<>();
         response.put("specialistId", specialistId);
@@ -216,7 +245,7 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Transactional
     public void unblockSlot(String specialistId, String appointmentId) {
         Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new IllegalArgumentException("Appointment not found"));
+                .orElseThrow(() -> new IllegalArgumentException(APPOINTMENT_NOT_FOUND));
 
         if (!appointment.getSpecialist().getId().equals(specialistId)) {
             throw new IllegalArgumentException("Not authorized to modify this appointment");

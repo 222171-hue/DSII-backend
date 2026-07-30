@@ -97,7 +97,7 @@ public class AppointmentController {
 
     @PostMapping("/specialist/block")
     @PreAuthorize("hasRole('SPECIALIST')")
-    public ResponseEntity<?> blockSlot(
+    public ResponseEntity<Object> blockSlot(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestBody Map<String, String> body) {
         try {
