@@ -24,6 +24,9 @@ public interface AppointmentRepository extends JpaRepository<Appointment, String
     List<Appointment> findByAppointmentDateBetween(LocalDate startDate, LocalDate endDate);
     
     boolean existsBySpecialistIdAndAppointmentDateAndStartTimeAndStatusNot(String specialistId, LocalDate appointmentDate, LocalTime startTime, AppointmentStatus status);
+    
+    @Query("SELECT COUNT(a) > 0 FROM Appointment a WHERE a.specialist.especialidad.name = :specialtyName AND a.appointmentDate = :appointmentDate AND a.startTime = :startTime AND a.status <> :status")
+    boolean existsBySpecialtyNameAndAppointmentDateAndStartTimeAndStatusNot(@Param("specialtyName") String specialtyName, @Param("appointmentDate") LocalDate appointmentDate, @Param("startTime") LocalTime startTime, @Param("status") AppointmentStatus status);
 
     @Query("SELECT COUNT(a) FROM Appointment a WHERE a.student.id = :studentId AND a.status = :status AND a.specialist.especialidad.name = :specialtyName")
     long countPendingAppointmentsByStudentAndSpecialty(@Param("studentId") String studentId, @Param("status") AppointmentStatus status, @Param("specialtyName") String specialtyName);

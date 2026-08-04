@@ -12,7 +12,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/specialties")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "http://localhost:4200")
 @SuppressWarnings("java:S4684")
 public class SpecialtyController {
 

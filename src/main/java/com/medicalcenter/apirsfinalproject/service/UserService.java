@@ -13,5 +13,6 @@ public interface UserService {
     User getUserById(String id);
     List<User> getAllUsers();
     User updateUser(String id, com.medicalcenter.apirsfinalproject.dto.request.UserUpdateRequest request);
+    void updateProfilePicture(String id, String base64Image);
     void deleteUser(String id);
 }

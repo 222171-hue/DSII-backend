@@ -46,6 +46,10 @@ public class User {
     @Column(name = "status", length = 20)
     private String status = "ACTIVO";
 
+    @Lob
+    @Column(name = "profilePicture", columnDefinition = "LONGTEXT")
+    private String profilePicture;
+
     @CreationTimestamp
     @Column(name = "createdAt", nullable = false, updatable = false)
     private LocalDateTime createdAt;

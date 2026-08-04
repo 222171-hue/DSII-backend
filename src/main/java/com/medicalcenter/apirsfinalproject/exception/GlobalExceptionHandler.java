@@ -7,6 +7,9 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -48,10 +51,26 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNoResourceFoundException(NoResourceFoundException ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put(ERROR_KEY, "Recurso no encontrado: " + ex.getResourcePath());
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler({AccessDeniedException.class, AuthorizationDeniedException.class})
+    public ResponseEntity<Map<String, String>> handleAccessDeniedException(Exception ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put(ERROR_KEY, "Acceso denegado o token expirado. Por favor, inicie sesión nuevamente.");
+        return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleGlobalException(Exception ex) {
         Map<String, String> response = new HashMap<>();
-        response.put(ERROR_KEY, "Ocurrió un error inesperado en el servidor: " + ex.getMessage());
+        java.io.StringWriter sw = new java.io.StringWriter();
+        ex.printStackTrace(new java.io.PrintWriter(sw));
+        response.put(ERROR_KEY, "Ocurrió un error inesperado en el servidor: " + ex.getMessage() + "\nStack: " + sw.toString());
         return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 

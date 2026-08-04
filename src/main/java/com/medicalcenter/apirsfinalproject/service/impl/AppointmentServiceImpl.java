@@ -13,6 +13,7 @@ import com.medicalcenter.apirsfinalproject.repository.StudentRepository;
 import com.medicalcenter.apirsfinalproject.service.AppointmentService;
 import com.medicalcenter.apirsfinalproject.service.NotificationService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -33,13 +34,19 @@ import org.slf4j.LoggerFactory;
 @RequiredArgsConstructor
 public class AppointmentServiceImpl implements AppointmentService {
     private static final String APPOINTMENT_NOT_FOUND = "Appointment not found";
+    private static final String SPECIALIST_NOT_FOUND = "Specialist not found";
+    private static final String AT_TEXT = " a las ";
+    private static final String UPDATE_MESSAGE = "UPDATE";
+    private static final String APPOINTMENTS_TOPIC = "/topic/appointments";
     private static final Logger logger = LoggerFactory.getLogger(AppointmentServiceImpl.class);
 
     private final AppointmentRepository appointmentRepository;
     private final SpecialistRepository specialistRepository;
     private final StudentRepository studentRepository;
+    private final com.medicalcenter.apirsfinalproject.repository.UserRepository userRepository;
     private final JdbcTemplate jdbcTemplate;
     private final NotificationService notificationService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @PostConstruct
     public void init() {
@@ -72,7 +79,7 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .orElseThrow(() -> new IllegalArgumentException("Student not found"));
 
         Specialist specialist = specialistRepository.findById(request.getSpecialistId())
-                .orElseThrow(() -> new IllegalArgumentException("Specialist not found"));
+                .orElseThrow(() -> new IllegalArgumentException(SPECIALIST_NOT_FOUND));
                 
         if (!specialist.getEspecialidad().getName().equals(request.getSpecialty())) {
              throw new IllegalArgumentException("El especialista no pertenece a esa especialidad");
@@ -82,8 +89,8 @@ public class AppointmentServiceImpl implements AppointmentService {
         LocalTime startTime = request.getDateTime().toLocalTime();
         LocalTime endTime = startTime.plusMinutes(30);
 
-        boolean exists = appointmentRepository.existsBySpecialistIdAndAppointmentDateAndStartTimeAndStatusNot(
-                specialist.getId(), appDate, startTime, AppointmentStatus.CANCELADO_POR_ESTUDIANTE);
+        boolean exists = appointmentRepository.existsBySpecialtyNameAndAppointmentDateAndStartTimeAndStatusNot(
+                specialist.getEspecialidad().getName(), appDate, startTime, AppointmentStatus.CANCELADO_POR_ESTUDIANTE);
         
         if (exists) {
             throw new IllegalArgumentException("El horario ya está ocupado");
@@ -102,7 +109,36 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .reason(request.getReason())
                 .build();
 
-        return appointmentRepository.save(appointment);
+        Appointment savedAppointment = appointmentRepository.save(appointment);
+
+        // Notificar a todos los especialistas de la misma especialidad
+        String msgToSpecialist = "Se ha agendado una nueva cita con el estudiante " + student.getNombre() + " " + student.getApellidos() + 
+                                 " para el " + appDate + AT_TEXT + startTime + ".";
+        java.util.List<User> specialists = userRepository.findByRol(com.medicalcenter.apirsfinalproject.entity.Role.SPECIALIST);
+        logger.info("Found {} specialists in total.", specialists.size());
+        for (User spec : specialists) {
+            specialistRepository.findById(spec.getId()).ifPresent(s -> {
+                logger.info("Checking specialist {} with specialty {}", s.getNombre(), s.getEspecialidad().getName());
+                if (s.getEspecialidad().getName().equals(request.getSpecialty())) {
+                    logger.info("Specialty matches! Creating notification for specialist {}", s.getId());
+                    notificationService.createNotification(s.getId(), msgToSpecialist);
+                }
+            });
+        }
+
+        // Notificar a todos los administradores
+        String msgToAdmin = "El estudiante " + student.getNombre() + " " + student.getApellidos() + 
+                            " ha registrado una nueva cita en la especialidad de " + specialist.getEspecialidad().getName() + 
+                            " para el " + appDate + AT_TEXT + startTime + ".";
+        java.util.List<User> admins = userRepository.findByRol(com.medicalcenter.apirsfinalproject.entity.Role.ADMIN);
+        logger.info("Found {} admins in total.", admins.size());
+        for (User admin : admins) {
+            notificationService.createNotification(admin.getId(), msgToAdmin);
+        }
+
+        messagingTemplate.convertAndSend(APPOINTMENTS_TOPIC, UPDATE_MESSAGE);
+
+        return savedAppointment;
     }
 
     @Override
@@ -121,6 +157,7 @@ public class AppointmentServiceImpl implements AppointmentService {
 
         appointment.setStatus(AppointmentStatus.CANCELADO_POR_ESTUDIANTE);
         appointmentRepository.save(appointment);
+        messagingTemplate.convertAndSend(APPOINTMENTS_TOPIC, UPDATE_MESSAGE);
     }
 
     @Override
@@ -129,7 +166,10 @@ public class AppointmentServiceImpl implements AppointmentService {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new IllegalArgumentException(APPOINTMENT_NOT_FOUND));
 
-        if (!appointment.getSpecialist().getId().equals(specialistId)) {
+        Specialist modifier = specialistRepository.findById(specialistId)
+                .orElseThrow(() -> new IllegalArgumentException(SPECIALIST_NOT_FOUND));
+
+        if (!appointment.getSpecialist().getEspecialidad().getId().equals(modifier.getEspecialidad().getId())) {
             throw new IllegalArgumentException("Not authorized to modify this appointment");
         }
 
@@ -141,7 +181,7 @@ public class AppointmentServiceImpl implements AppointmentService {
             }
             if (appointment.getStudent() != null) {
                 String message = "Tu cita con " + appointment.getSpecialist().getNombre() + " " + appointment.getSpecialist().getApellidos() + 
-                                 " el " + appointment.getAppointmentDate() + " a las " + appointment.getStartTime() + " ha sido cancelada por el especialista.";
+                                 " el " + appointment.getAppointmentDate() + AT_TEXT + appointment.getStartTime() + " ha sido cancelada por el especialista.";
                 if (cancelReason != null && !cancelReason.trim().isEmpty()) {
                     message += " Motivo: " + cancelReason;
                 }
@@ -151,42 +191,33 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
         
         appointmentRepository.save(appointment);
+        messagingTemplate.convertAndSend(APPOINTMENTS_TOPIC, UPDATE_MESSAGE);
     }
 
     @Override
     public List<Appointment> getPendingAppointmentsForStudent(String studentId) {
         // Obtenemos todas y filtramos localmente para simplificar la consulta
-        List<Appointment> studentAppointments = appointmentRepository.findAll().stream()
+        return appointmentRepository.findAll().stream()
                 .filter(a -> a.getStudent() != null && a.getStudent().getId().equals(studentId))
                 .toList();
-
-        LocalDateTime now = LocalDateTime.now();
-        
-        for (Appointment app : studentAppointments) {
-            if (app.getStatus() == AppointmentStatus.PENDIENTE) {
-                LocalDateTime appDateTime = LocalDateTime.of(app.getAppointmentDate(), app.getStartTime());
-                if (appDateTime.isBefore(now)) {
-                    app.setStatus(AppointmentStatus.AUSENTE);
-                    appointmentRepository.save(app);
-                                    }
-            }
-        }
-        
-        return studentAppointments;
     }
 
     @Override
     public List<Appointment> getAppointmentsForSpecialist(String specialistId, LocalDateTime start, LocalDateTime end) {
         LocalDate startDate = start.toLocalDate();
         LocalDate endDate = end.toLocalDate();
-        return appointmentRepository.findBySpecialistIdAndAppointmentDateBetween(specialistId, startDate, endDate);
+        Specialist specialist = specialistRepository.findById(specialistId)
+                .orElseThrow(() -> new IllegalArgumentException(SPECIALIST_NOT_FOUND));
+        return appointmentRepository.findBySpecialtyNameAndAppointmentDateBetween(specialist.getEspecialidad().getName(), startDate, endDate);
     }
 
     @Override
     public Map<String, Object> getOccupiedSlotsForSpecialist(String specialistId, LocalDateTime start, LocalDateTime end) {
         LocalDate startDate = start.toLocalDate();
         LocalDate endDate = end.toLocalDate();
-        List<Appointment> apps = appointmentRepository.findBySpecialistIdAndAppointmentDateBetween(specialistId, startDate, endDate);
+        Specialist specialist = specialistRepository.findById(specialistId)
+                .orElseThrow(() -> new IllegalArgumentException(SPECIALIST_NOT_FOUND));
+        List<Appointment> apps = appointmentRepository.findBySpecialtyNameAndAppointmentDateBetween(specialist.getEspecialidad().getName(), startDate, endDate);
         
         List<Map<String, Object>> occupiedSlots = apps.stream()
                 .filter(a -> a.getStatus() != AppointmentStatus.CANCELADO_POR_ESTUDIANTE && a.getStatus() != AppointmentStatus.CANCELADO_POR_ESPECIALISTA)
@@ -214,14 +245,14 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Transactional
     public Appointment blockSlot(String specialistId, LocalDateTime dateTime) {
         Specialist specialist = specialistRepository.findById(specialistId)
-                .orElseThrow(() -> new IllegalArgumentException("Specialist not found"));
+                .orElseThrow(() -> new IllegalArgumentException(SPECIALIST_NOT_FOUND));
 
         LocalDate appDate = dateTime.toLocalDate();
         LocalTime startTime = dateTime.toLocalTime();
         LocalTime endTime = startTime.plusMinutes(30);
 
-        boolean exists = appointmentRepository.existsBySpecialistIdAndAppointmentDateAndStartTimeAndStatusNot(
-                specialistId, appDate, startTime, AppointmentStatus.CANCELADO_POR_ESTUDIANTE);
+        boolean exists = appointmentRepository.existsBySpecialtyNameAndAppointmentDateAndStartTimeAndStatusNot(
+                specialist.getEspecialidad().getName(), appDate, startTime, AppointmentStatus.CANCELADO_POR_ESTUDIANTE);
 
         if (exists) {
             throw new IllegalArgumentException("El horario ya está ocupado");
@@ -238,7 +269,9 @@ public class AppointmentServiceImpl implements AppointmentService {
                 .reason("Horario bloqueado por el especialista")
                 .build();
 
-        return appointmentRepository.save(appointment);
+        Appointment saved = appointmentRepository.save(appointment);
+        messagingTemplate.convertAndSend(APPOINTMENTS_TOPIC, UPDATE_MESSAGE);
+        return saved;
     }
 
     @Override
@@ -247,7 +280,10 @@ public class AppointmentServiceImpl implements AppointmentService {
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new IllegalArgumentException(APPOINTMENT_NOT_FOUND));
 
-        if (!appointment.getSpecialist().getId().equals(specialistId)) {
+        Specialist modifier = specialistRepository.findById(specialistId)
+                .orElseThrow(() -> new IllegalArgumentException(SPECIALIST_NOT_FOUND));
+
+        if (!appointment.getSpecialist().getEspecialidad().getId().equals(modifier.getEspecialidad().getId())) {
             throw new IllegalArgumentException("Not authorized to modify this appointment");
         }
 
@@ -256,5 +292,6 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
 
         appointmentRepository.delete(appointment);
+        messagingTemplate.convertAndSend(APPOINTMENTS_TOPIC, UPDATE_MESSAGE);
     }
 }

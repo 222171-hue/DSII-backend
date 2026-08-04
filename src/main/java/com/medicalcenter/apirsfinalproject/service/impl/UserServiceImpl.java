@@ -12,6 +12,7 @@ import com.medicalcenter.apirsfinalproject.repository.SpecialistRepository;
 import com.medicalcenter.apirsfinalproject.repository.SpecialtyRepository;
 import com.medicalcenter.apirsfinalproject.service.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -23,11 +24,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    private static final String UPDATE_MESSAGE = "UPDATE";
+    private static final String USERS_TOPIC = "/topic/users";
+
     private final UserRepository userRepository;
     private final StudentRepository studentRepository;
     private final SpecialistRepository specialistRepository;
     private final SpecialtyRepository specialtyRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Override
     public User registerUser(UserRegistrationRequest request) {
@@ -56,7 +61,9 @@ public class UserServiceImpl implements UserService {
             student.setPassword(passwordEncoder.encode(request.getPassword()));
             student.setCodigoEstudiantil(request.getCodigoEstudiantil());
             student.setCarrera(request.getCarrera());
-            return studentRepository.save(student);
+            Student saved = studentRepository.save(student);
+            messagingTemplate.convertAndSend(USERS_TOPIC, UPDATE_MESSAGE);
+            return saved;
             
         } else if (request.getRol() == Role.SPECIALIST) {
             Specialist specialist = new Specialist();
@@ -73,7 +80,9 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new IllegalArgumentException("Especialidad no encontrada: " + request.getEspecialidad()));
             specialist.setEspecialidad(specialty);
             
-            return specialistRepository.save(specialist);
+            Specialist saved = specialistRepository.save(specialist);
+            messagingTemplate.convertAndSend(USERS_TOPIC, UPDATE_MESSAGE);
+            return saved;
             
         } else {
             // ADMIN
@@ -86,7 +95,9 @@ public class UserServiceImpl implements UserService {
             user.setCelular(request.getCelular());
             user.setRol(request.getRol());
             user.setPassword(passwordEncoder.encode(request.getPassword()));
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            messagingTemplate.convertAndSend(USERS_TOPIC, UPDATE_MESSAGE);
+            return saved;
         }
     }
 
@@ -148,11 +159,21 @@ public class UserServiceImpl implements UserService {
             specialist.setEspecialidad(spec);
         }
 
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        messagingTemplate.convertAndSend(USERS_TOPIC, UPDATE_MESSAGE);
+        return saved;
+    }
+
+    @Override
+    public void updateProfilePicture(String id, String base64Image) {
+        User user = getUserById(id);
+        user.setProfilePicture(base64Image);
+        userRepository.save(user);
     }
 
     @Override
     public void deleteUser(String id) {
         userRepository.deleteById(id);
+        messagingTemplate.convertAndSend(USERS_TOPIC, UPDATE_MESSAGE);
     }
 }

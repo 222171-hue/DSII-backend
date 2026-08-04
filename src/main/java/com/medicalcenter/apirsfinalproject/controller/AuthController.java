@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "http://localhost:4200")
 public class AuthController {
 
     private final AuthenticationManager authenticationManager;
@@ -35,6 +35,10 @@ public class AuthController {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         
         String jwt = jwtUtils.generateToken(userDetails);
+        String especialidad = null;
+        if (userDetails.getUser() instanceof com.medicalcenter.apirsfinalproject.entity.Specialist specialist) {
+            especialidad = specialist.getEspecialidad().getName();
+        }
         
         return ResponseEntity.ok(AuthResponse.builder()
                 .token(jwt)
@@ -43,6 +47,8 @@ public class AuthController {
                 .nombre(userDetails.getUser().getNombre())
                 .apellidos(userDetails.getUser().getApellidos())
                 .rol(userDetails.getUser().getRol().name())
+                .profilePicture(userDetails.getUser().getProfilePicture())
+                .especialidad(especialidad)
                 .build());
     }
 }

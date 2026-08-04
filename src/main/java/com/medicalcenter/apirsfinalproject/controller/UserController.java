@@ -16,7 +16,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "http://localhost:4200")
 public class UserController {
 
     private final UserService userService;
@@ -56,5 +56,13 @@ public class UserController {
     public ResponseEntity<Void> deleteUser(@PathVariable String id) {
         userService.deleteUser(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}/avatar")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> updateProfilePicture(@PathVariable String id, @RequestBody java.util.Map<String, String> request) {
+        String base64Image = request.get("profilePicture");
+        userService.updateProfilePicture(id, base64Image);
+        return ResponseEntity.ok().build();
     }
 }

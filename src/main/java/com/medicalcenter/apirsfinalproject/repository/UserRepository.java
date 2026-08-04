@@ -8,4 +8,5 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, String> {
     Optional<User> findByCorreo(String correo);
     Optional<User> findByDni(String dni);
+    java.util.List<User> findByRol(com.medicalcenter.apirsfinalproject.entity.Role rol);
 }

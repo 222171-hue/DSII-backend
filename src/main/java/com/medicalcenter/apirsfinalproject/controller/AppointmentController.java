@@ -7,6 +7,7 @@ import com.medicalcenter.apirsfinalproject.security.CustomUserDetails;
 import com.medicalcenter.apirsfinalproject.service.AppointmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,10 +19,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/appointments")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "http://localhost:4200")
 public class AppointmentController {
 
     private final AppointmentService appointmentService;
@@ -104,7 +106,7 @@ public class AppointmentController {
             LocalDateTime dateTime = LocalDateTime.parse(body.get("dateTime"));
             return ResponseEntity.ok(appointmentService.blockSlot(userDetails.getUser().getId(), dateTime));
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Error blocking slot: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
         }
