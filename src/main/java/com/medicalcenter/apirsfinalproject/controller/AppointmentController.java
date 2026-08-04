@@ -23,7 +23,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/appointments")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "https://dsii-frontend-production.up.railway.app"})
 public class AppointmentController {
 
     private final AppointmentService appointmentService;

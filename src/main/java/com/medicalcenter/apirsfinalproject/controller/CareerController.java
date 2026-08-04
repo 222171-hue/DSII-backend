@@ -13,7 +13,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/careers")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "https://dsii-frontend-production.up.railway.app"})
 @SuppressWarnings("java:S4684")
 public class CareerController {
     // @SuppressWarnings("java:S4684")
